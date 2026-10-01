@@ -1,0 +1,15 @@
+<html>
+<body bgcolor="#ffffff">
+<form method="post" action="/fr/work/inq/result" name="srch">
+<table border="0" cellpadding="3">
+<tr><td colspan="2"><font size="2"><b>MEMBER INQUIRY</b></font></td></tr>
+<tr><td>{{ labels.member_id_label }}</td><td><input type="text" name="member_no" size="12"></td></tr>
+<tr><td colspan="2">
+  <a href="javascript:document.forms['srch'].submit()">{{ labels.search_btn }}</a>
+  &nbsp;
+  <input type="submit" value="{{ labels.search_btn }}" style="display:none">
+</td></tr>
+</table>
+</form>
+</body>
+</html>

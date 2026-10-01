@@ -1,0 +1,12 @@
+<!-- placeholder only — not routed yet; wired up alongside the safety approval gate (S12) -->
+<html>
+<body bgcolor="#ffffff">
+<table border="0" cellpadding="3">
+<tr><td colspan="2"><font size="2"><b>REVIEW TRANSFER</b></font></td></tr>
+<tr><td>From:</td><td>{{ from_share }}</td></tr>
+<tr><td>To:</td><td>{{ to_share }}</td></tr>
+<tr><td>Amount:</td><td>{{ amount }}</td></tr>
+</table>
+<form method="post" action="/fr/work/xfer/confirm"><input type="submit" value="Continue"></form>
+</body>
+</html>
