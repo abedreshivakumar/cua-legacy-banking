@@ -1,0 +1,192 @@
+schema_version: 1
+id: member_inquiry
+version: "0.0.1"
+status: draft
+summary: >
+  Look up a CoreBank member by member number and return their Regular
+  Savings balance. Read-only. Outcomes: succeeded | member_not_found.
+app:
+  vendor: mockbank
+  product: corebank_mock
+  version_range: ">=0.1,<1"
+  surface: web
+side_effects: read_only
+labels:
+  member_id_label: "Member No.:"
+  search_btn: "Search"
+  savings_row: "Regular Savings"
+  balance_col: "Available Balance"
+allowed_literals: []
+
+inputs:
+  - name: member_no
+    type: string
+    pattern: "^[0-9]{6}$"
+    sensitivity: pii
+    description: "CoreBank member number"
+
+outputs:
+  - name: savings_balance
+    type: decimal
+    sensitivity: pii
+    required: true
+    extract:
+      read: text
+      transforms: [strip, remove_dollar_sign, to_decimal]
+      target:
+        scope:
+          - kind: frame
+            name: work
+        expect:
+          kind: cell
+        strategies:
+          - by: table_cell
+            row_anchor: "$labels.savings_row"
+            column_header: "$labels.balance_col"
+
+outcomes:
+  - name: member_not_found
+    description: "No member exists with this number. A legitimate result, not a failure."
+
+entry:
+  route: /fr/work/inq
+  login_script_ref: scripts/corebank_login
+  condition:
+    type: element_resolvable
+    target:
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: textbox
+        editable: true
+      strategies:
+        - by: attr
+          attr: name
+          value: member_no
+
+steps:
+  - id: enter_member_no
+    intent: "Type the member number into the search field"
+    action: type
+    value: "{{ inputs.member_no }}"
+    risk: input
+    idempotent: true
+    target:
+      resolved_from: coordinate
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: textbox
+        editable: true
+      strategies:
+        - by: attr
+          attr: name
+          value: member_no
+    post:
+      timeout_ms: 2000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: link
+          strategies:
+            - by: text
+              text: "$labels.search_btn"
+              match: contains
+
+  - id: submit_search
+    intent: "Click Search to submit the member lookup"
+    action: click
+    risk: query
+    idempotent: false
+    target:
+      resolved_from: coordinate
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: link
+        forbidden_text_pattern: "(?i)\\b(delete|void)\\b"
+      strategies:
+        - by: text
+          text: "$labels.search_btn"
+          match: contains
+    post:
+      timeout_ms: 10000
+      when:
+        type: any
+        conditions:
+          - type: text_present
+            scope:
+              - kind: frame
+                name: work
+            text: "$labels.savings_row"
+          - type: text_present
+            scope:
+              - kind: frame
+                name: work
+            pattern: "NO RECORD FOUND"
+
+  - id: read_balance
+    intent: "Read the Regular Savings balance from the result table"
+    action: extract
+    risk: observe
+    idempotent: true
+    target:
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: cell
+      strategies:
+        - by: table_cell
+          row_anchor: "$labels.savings_row"
+          column_header: "$labels.balance_col"
+    post:
+      timeout_ms: 1000
+      when:
+        type: outputs_present
+        names: [savings_balance]
+
+detectors:
+  - id: member_not_found
+    kind: business_outcome
+    active: [submit_search]
+    priority: 10
+    outcome: member_not_found
+    origin: discovered
+    when:
+      type: text_present
+      scope:
+        - kind: frame
+          name: work
+      pattern: "NO RECORD FOUND"
+
+checkpoint:
+  when:
+    type: all
+    conditions:
+      - type: text_present
+        scope:
+          - kind: frame
+            name: work
+        text: "$labels.savings_row"
+      - type: text_present
+        scope:
+          - kind: frame
+            name: work
+        text: "{{ inputs.member_no }}"
+      - type: outputs_present
+        names: [savings_balance]
+
+provenance:
+  discovery_run_id: handwritten
+  model: "n/a"
+  recorded_at: "2026-10-01T00:00:00Z"
+  transcript_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  compiler_version: "0.0.1"

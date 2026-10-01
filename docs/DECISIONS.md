@@ -61,3 +61,16 @@ Standards followed: see `artifacts/adopted_standards.md` (general Python/testing
 
 ## D10 — What we are not building
 Per the brief's explicit penalty on scaling infrastructure: no tenant-overlay engine, no operator web console, no desktop surface implementation, no queues/services/Docker/CI. These get a design section in REPORT.md (§4 Heterogeneity & multi-tenant, §5 Escalation & handoff) instead of code. See `artifacts/buildout_interface-ai-cua_take-home.md` §"What NOT to build" for the full list and reasoning.
+
+## D11 — Schema trimmed to the buildout plan's keep-set
+**Context:** the first schema draft (from the architecture-review pass) was workable but ~30% wider than a 36h build justifies — every field has to be defensible in REPORT §2 and in follow-up questions.
+**Decision:** dropped `quorum` and `min_confidence` per step, per-step `page_signature` in provenance (kept one, single value, on `Checkpoint` instead), the `FieldValueEquals` condition (covered by `TextPresent` + scoped `ElementResolvable`), and the separate tenant-overlay/drift-engine code (now design-only, see D10). Kept everything in the "Keep in v0" column of `artifacts/buildout_interface-ai-cua_take-home.md` §2.
+**Consequence:** a `Step`'s only proof that an action "worked" is its `post` condition — there is no per-field value-equality check. Acceptable because the compiler (S9) will separately verify extracted output values against what discovery claimed (see buildout plan item 12), which is the check that actually matters.
+
+## D12 — `extra="forbid"` on every artifact model, as the anti-coordinate guard
+**Context:** D0/D1 require that raw coordinates never reach the artifact — this needs to be enforced, not just intended.
+**Decision:** every Pydantic model in `artifact/targets.py`, `artifact/conditions.py`, and `artifact/schema.py` sets `model_config = ConfigDict(extra="forbid")`. A stray `coordinate` field on a `Strategy` or `TargetDescriptor` — e.g. from a future compiler bug that serializes a raw click point — fails validation immediately instead of silently round-tripping.
+**Consequence:** this is a structural guarantee, not just a lint rule or code-review habit; tested directly in `test_artifact_schema.py`.
+
+## G0 spike — status
+The offline half (Python/Playwright hit-test resolving a coordinate through the `work` frame to the correct `<input name="member_no">`, zero LLM calls) passed on the first run — `tests/integration/test_hittest.py`. The live half (a capped 6-step `claude-opus-5-5` computer-toolset run against the real app) is written (`scripts/spike_g0.py`, dev-only, not part of the deliverable surface) but not yet run to completion — the first attempt failed on account billing, not on protocol or code. Per the user's cost-consciousness, the live spike and the required discovery/evidence runs are deferred to a single batch near the end of the build, once credits are available — consistent with D9. The SDK's shipped types (`ToolUseBlock.toolset_name`, `ToolResultBlockParam.toolset_name`) were inspected directly from the installed package to ground the request/response shape before spending any tokens.
