@@ -1,0 +1,25 @@
+<html>
+<body bgcolor="#ffffff">
+{% if member %}
+<div style="display:none">NO RECORD FOUND - RC=04</div>
+<table border="0" cellpadding="3">
+<tr><td colspan="2"><font size="2"><b>MEMBER: {{ queried_member_no }}</b></font></td></tr>
+<tr><td>Name:</td><td>{{ member.name }}</td></tr>
+<tr><td>Status:</td><td>{{ member.status }}</td></tr>
+<tr><td>SSN:</td><td>{{ member.ssn_display }}</td></tr>
+<tr><td>DOB:</td><td>{{ member.dob }}</td></tr>
+<tr><td>Last Activity:</td><td>{{ member.last_activity }}</td></tr>
+</table>
+<br>
+<table border="1" cellpadding="3">
+<tr><th>{{ labels.savings_row }}</th><th>{{ labels.balance_col }}</th></tr>
+<tr><td>{{ labels.savings_row }}</td><td>$ {{ member.savings_balance }}</td></tr>
+</table>
+{% else %}
+<table border="0" cellpadding="3">
+<tr><td><font color="#cc0000"><b>NO RECORD FOUND - RC=04</b></font></td></tr>
+<tr><td>Member {{ queried_member_no }} was not located.</td></tr>
+</table>
+{% endif %}
+</body>
+</html>

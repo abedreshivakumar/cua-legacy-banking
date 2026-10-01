@@ -1,0 +1,22 @@
+[
+  {"member_no": "100001", "name": "Testy McFakeface", "status": "ACTIVE", "savings_balance": "4821.09", "ssn_display": "XXX-XX-9101", "dob": "1971-03-14", "last_activity": "2026-09-02"},
+  {"member_no": "100002", "name": "Wanda Placeholder", "status": "ACTIVE", "savings_balance": "112.50", "ssn_display": "XXX-XX-9102", "dob": "1968-11-02", "last_activity": "2026-08-19"},
+  {"member_no": "100003", "name": "Sam Dummydata", "status": "DORMANT", "savings_balance": "9900.00", "ssn_display": "XXX-XX-9103", "dob": "1975-06-23", "last_activity": "2024-01-07"},
+  {"member_no": "100004", "name": "Nora Synthetica", "status": "ACTIVE", "savings_balance": "530.77", "ssn_display": "XXX-XX-9104", "dob": "1980-01-30", "last_activity": "2026-09-20"},
+  {"member_no": "100005", "name": "Gary Notreal", "status": "ACTIVE", "savings_balance": "17230.44", "ssn_display": "XXX-XX-9105", "dob": "1963-09-09", "last_activity": "2026-07-11"},
+  {"member_no": "100006", "name": "Pat Examplar", "status": "DORMANT", "savings_balance": "0.00", "ssn_display": "XXX-XX-9106", "dob": "1972-12-25", "last_activity": "2022-05-30"},
+  {"member_no": "100007", "name": "Ivy Mockington", "status": "ACTIVE", "savings_balance": "2345.67", "ssn_display": "XXX-XX-9107", "dob": "1978-04-17", "last_activity": "2026-09-28"},
+  {"member_no": "100008", "name": "Leo Stubworth", "status": "ACTIVE", "savings_balance": "861.02", "ssn_display": "XXX-XX-9108", "dob": "1969-02-11", "last_activity": "2026-06-14"},
+  {"member_no": "100009", "name": "Opal Testerson", "status": "ACTIVE", "savings_balance": "33210.15", "ssn_display": "XXX-XX-9109", "dob": "1974-10-05", "last_activity": "2026-09-01"},
+  {"member_no": "100010", "name": "Ray Fixturella", "status": "DORMANT", "savings_balance": "55.20", "ssn_display": "XXX-XX-9110", "dob": "1966-07-19", "last_activity": "2023-11-11"},
+  {"member_no": "100011", "name": "June Sampleton", "status": "ACTIVE", "savings_balance": "7640.33", "ssn_display": "XXX-XX-9111", "dob": "1982-03-08", "last_activity": "2026-08-30"},
+  {"member_no": "100012", "name": "Milo Harnessman", "status": "ACTIVE", "savings_balance": "1200.00", "ssn_display": "XXX-XX-9112", "dob": "1977-05-22", "last_activity": "2026-09-15"},
+  {"member_no": "100013", "name": "Fay Scaffolding", "status": "ACTIVE", "savings_balance": "412.89", "ssn_display": "XXX-XX-9113", "dob": "1970-08-01", "last_activity": "2026-07-27"},
+  {"member_no": "100014", "name": "Hugo Mockery", "status": "DORMANT", "savings_balance": "19.10", "ssn_display": "XXX-XX-9114", "dob": "1965-01-16", "last_activity": "2021-09-09"},
+  {"member_no": "100015", "name": "Dot Fakington", "status": "ACTIVE", "savings_balance": "28400.00", "ssn_display": "XXX-XX-9115", "dob": "1979-12-12", "last_activity": "2026-09-25"},
+  {"member_no": "100016", "name": "Rex Phonydale", "status": "ACTIVE", "savings_balance": "650.45", "ssn_display": "XXX-XX-9116", "dob": "1973-04-04", "last_activity": "2026-08-05"},
+  {"member_no": "100017", "name": "Mabel Decoyson", "status": "ACTIVE", "savings_balance": "3390.60", "ssn_display": "XXX-XX-9117", "dob": "1967-10-29", "last_activity": "2026-09-10"},
+  {"member_no": "100018", "name": "Otto Simulacrum", "status": "DORMANT", "savings_balance": "0.50", "ssn_display": "XXX-XX-9118", "dob": "1960-06-06", "last_activity": "2020-03-03"},
+  {"member_no": "100019", "name": "Vera Templeton", "status": "ACTIVE", "savings_balance": "9050.90", "ssn_display": "XXX-XX-9119", "dob": "1981-09-19", "last_activity": "2026-09-22"},
+  {"member_no": "100020", "name": "Zane Boilerplate", "status": "ACTIVE", "savings_balance": "445.00", "ssn_display": "XXX-XX-9120", "dob": "1976-02-28", "last_activity": "2026-06-30"}
+]
