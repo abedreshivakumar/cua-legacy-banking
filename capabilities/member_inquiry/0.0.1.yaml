@@ -49,7 +49,7 @@ outcomes:
     description: "No member exists with this number. A legitimate result, not a failure."
 
 entry:
-  route: /fr/work/inq
+  route: /main
   login_script_ref: scripts/corebank_login
   condition:
     type: element_resolvable
@@ -131,27 +131,6 @@ steps:
               - kind: frame
                 name: work
             pattern: "NO RECORD FOUND"
-
-  - id: read_balance
-    intent: "Read the Regular Savings balance from the result table"
-    action: extract
-    risk: observe
-    idempotent: true
-    target:
-      scope:
-        - kind: frame
-          name: work
-      expect:
-        kind: cell
-      strategies:
-        - by: table_cell
-          row_anchor: "$labels.savings_row"
-          column_header: "$labels.balance_col"
-    post:
-      timeout_ms: 1000
-      when:
-        type: outputs_present
-        names: [savings_balance]
 
 detectors:
   - id: member_not_found

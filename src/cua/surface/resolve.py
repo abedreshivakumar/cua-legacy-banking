@@ -110,10 +110,13 @@ def _sub_labels(text: str, labels: dict[str, str]) -> str:
     return re.sub(r"\$labels\.(\w+)", lambda m: labels.get(m.group(1), m.group(0)), text)
 
 
-def _frame_for_scope(page: Page, scope: list[ScopeStep]) -> Frame | None:
+def frame_for_scope(page: Page, scope: list[ScopeStep]) -> Frame | None:
     frame = page.main_frame
     for step in scope:
-        candidates = frame.child_frames
+        # child_frames can briefly retain detached frames from a previous
+        # navigation of the same name — exclude them, or a reload can pick
+        # a dead frame and every action on it raises "Frame was detached".
+        candidates = [f for f in frame.child_frames if not f.is_detached()]
         next_frame = None
         if step.name:
             next_frame = next((f for f in candidates if f.name == step.name), None)
@@ -194,6 +197,10 @@ def _substitute_labels(strat, labels: dict[str, str]):
 
 
 async def _passes_expect(handle: ElementHandle, expect: ElementExpectation) -> bool:
+    if expect.kind != "generic":
+        selector = _CONTROL_SELECTORS.get(expect.kind)
+        if selector and not await handle.evaluate(f"el => el.matches({selector!r})"):
+            return False
     if expect.editable is not None:
         is_editable = await handle.evaluate(
             "el => ['INPUT','TEXTAREA','SELECT'].includes(el.tagName) || el.isContentEditable"
@@ -208,7 +215,7 @@ async def _passes_expect(handle: ElementHandle, expect: ElementExpectation) -> b
 
 
 async def resolve(page: Page, target: TargetDescriptor, labels: dict[str, str]) -> Resolution:
-    frame = _frame_for_scope(page, target.scope)
+    frame = frame_for_scope(page, target.scope)
     if frame is None:
         return Resolution(
             handle=None,

@@ -19,7 +19,7 @@ def test_handwritten_artifact_validates() -> None:
     cap = capability_from_yaml(FIXTURE.read_text())
     assert cap.id == "member_inquiry"
     assert cap.side_effects == "read_only"
-    assert len(cap.steps) == 3
+    assert len(cap.steps) == 2
     assert cap.steps[0].id == "enter_member_no"
 
 
