@@ -131,8 +131,20 @@ async def test_discovery_completes_a_member_lookup(live_server: str) -> None:
         assert "100007" in result.summary
         member_actions = [e for e in result.action_log if e.kind == "member_action"]
         assert [e.name for e in member_actions] == ["left_click", "type", "left_click"]
-        # the first click must have resolved to the real member_no input
-        assert member_actions[0].resolved["name"] == "member_no"
+
+        # D2: the click was dispatched through a RESOLVED target, not the
+        # raw coordinate — both clicks must carry a built, resolved target.
+        first_click, second_click = member_actions[0], member_actions[2]
+        assert first_click.resolved["name"] == "member_no"
+        assert first_click.target is not None
+        assert first_click.target.strategies[0].by == "attr"
+
+        # the Search link is ambiguous by text alone (a hidden duplicate
+        # submit button also matches — see D14); this only resolves because
+        # target_from_facts inferred expect.kind="link" from the hit tag.
+        assert second_click.resolved["tag"] == "A"
+        assert second_click.target is not None
+        assert second_click.target.expect.kind == "link"
 
         await browser.close()
 
@@ -245,5 +257,39 @@ async def test_history_is_append_only(live_server: str) -> None:
             "assistant",
             "user",
         ]
+
+        await browser.close()
+
+
+async def test_record_output_mismatch_escalates(live_server: str) -> None:
+    """S8: a claimed output value that isn't actually on screen is a real
+    discovery failure, not something the recorder silently carries forward."""
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch()
+        page = await _logged_in_page(browser, live_server)
+
+        turns = [
+            FakeMessage(
+                content=[
+                    _tool_use(
+                        "record_output",
+                        {
+                            "name": "savings_balance",
+                            "value": "99999.99 this value is not on the page",
+                            "rationale": "hallucinated",
+                        },
+                        toolset=False,
+                    )
+                ]
+            ),
+        ]
+        client = ScriptedModelClient(turns=turns)
+
+        result = await run_discovery(page, client, "irrelevant for this test")
+
+        assert result.status == "escalated"
+        assert "record_output mismatch" in result.summary
+        # the mismatch must NOT have been recorded as if it were trustworthy
+        assert not any(e.name == "record_output" for e in result.action_log)
 
         await browser.close()

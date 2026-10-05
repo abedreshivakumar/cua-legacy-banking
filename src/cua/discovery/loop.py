@@ -6,11 +6,14 @@ from typing import Any, Literal
 
 from playwright.async_api import Page
 
+from cua.artifact.targets import TargetDescriptor
 from cua.discovery.actions import execute_action
 from cua.discovery.model_client import ModelClient
+from cua.discovery.recorder import verify_output_on_page
 
 MAX_STEPS = 20
-_RECORD_TOOLS = {"declare_input", "record_output", "assert_checkpoint", "report_outcome"}
+# record_output is handled separately — it needs DOM verification, not just logging.
+_RECORD_TOOLS = {"declare_input", "assert_checkpoint", "report_outcome"}
 
 
 @dataclass
@@ -20,6 +23,7 @@ class ActionLogEntry:
     name: str
     input: dict[str, Any]
     resolved: dict[str, Any] | None = None
+    target: TargetDescriptor | None = None
     text: str | None = None
 
 
@@ -142,6 +146,25 @@ async def run_discovery(
                     "escalated", raw_input.get("reason", ""), action_log, messages
                 )
 
+            if name == "record_output":
+                claimed = raw_input.get("value", "")
+                if not await verify_output_on_page(page, claimed):
+                    tool_results.append(
+                        _error_result(block, f"value {claimed!r} not found on the current page")
+                    )
+                    messages.append({"role": "user", "content": tool_results})
+                    return DiscoveryResult(
+                        "escalated",
+                        f"record_output mismatch: claimed {claimed!r} is not on screen",
+                        action_log,
+                        messages,
+                    )
+                action_log.append(
+                    ActionLogEntry(step=step, kind="custom_tool", name=name, input=raw_input)
+                )
+                tool_results.append(_ok_result(block))
+                continue
+
             if name in _RECORD_TOOLS:
                 action_log.append(
                     ActionLogEntry(step=step, kind="custom_tool", name=name, input=raw_input)
@@ -153,10 +176,15 @@ async def run_discovery(
                 tool_results.append(_error_result(block, "screen changed; re-observe"))
                 continue
 
-            screenshot_b64, resolved = await execute_action(page, name, raw_input)
+            screenshot_b64, resolved, target = await execute_action(page, name, raw_input)
             action_log.append(
                 ActionLogEntry(
-                    step=step, kind="member_action", name=name, input=raw_input, resolved=resolved
+                    step=step,
+                    kind="member_action",
+                    name=name,
+                    input=raw_input,
+                    resolved=resolved,
+                    target=target,
                 )
             )
 

@@ -17,12 +17,15 @@ class ScopeStep(BaseModel):
     index: int | None = None
 
 
+ElementKind = Literal["textbox", "button", "link", "cell", "select", "generic"]
+
+
 class ElementExpectation(BaseModel):
     """A guard against resolving onto the wrong element after drift."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["textbox", "button", "link", "cell", "select", "generic"] = "generic"
+    kind: ElementKind = "generic"
     editable: bool | None = None
     forbidden_text_pattern: str | None = None  # e.g. r"(?i)\b(void|delete)\b"
 
