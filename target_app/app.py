@@ -11,12 +11,15 @@ import os
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from target_app.data import create_session, find_member, get_session, invalidate_session
 from target_app.faults import FaultController, FaultSpec
+
+load_dotenv()  # so `make app`/`uvicorn target_app.app:app` picks up .env on its own
 
 app = FastAPI(title="CoreBank (mock)")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))

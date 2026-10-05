@@ -21,12 +21,12 @@ from cua.replay.result import (
     BusinessOutcomeResult,
     Escalated,
     Failed,
-    RunResultBase,
+    RunResult,
     StepTrace,
     Succeeded,
 )
 from cua.replay.templating import render
-from cua.surface.resolve import resolve
+from cua.surface.resolve import frame_for_scope, resolve
 
 POLL_MS = 150
 
@@ -124,7 +124,7 @@ async def _race_post_and_detectors(
         elapsed += POLL_MS
 
 
-def _result_for_detector(detector: Detector, base: dict, step_id: str) -> RunResultBase:
+def _result_for_detector(detector: Detector, base: dict, step_id: str) -> RunResult:
     if detector.kind == "business_outcome":
         return BusinessOutcomeResult(**base, outcome=detector.outcome or detector.id)
     if detector.kind == "escalate":
@@ -190,7 +190,7 @@ async def replay(
     *,
     base_url: str = "",
     entry_timeout_ms: int = 10000,
-) -> RunResultBase:
+) -> RunResult:
     run_id = str(uuid.uuid4())
     labels = capability.labels
     outputs: dict[str, Any] = {}
@@ -268,6 +268,12 @@ async def replay(
                 )
             strategy_used = res.strategy_used
             await _act(res.handle, page, step, inputs, labels)
+            # Let the action's effect (often a frame-level navigation, since
+            # the mock app is server-rendered) fully land before polling —
+            # otherwise the detector check and the post-condition check can
+            # straddle the transition, each reading a different DOM state.
+            settle_frame = frame_for_scope(page, step.target.scope) or page.main_frame
+            await settle_frame.wait_for_load_state("domcontentloaded")
         elif step.action == "navigate":
             await page.goto(render(step.value or "", inputs, labels))
         elif step.action == "press":
