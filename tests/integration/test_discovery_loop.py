@@ -146,6 +146,15 @@ async def test_discovery_completes_a_member_lookup(live_server: str) -> None:
         assert second_click.target is not None
         assert second_click.target.expect.kind == "link"
 
+        # S8: record_output's claimed value was located on the live
+        # results table as a real table_cell target, not just verified
+        # present — this is what the compiler needs to build an output.
+        output_entry = next(e for e in result.action_log if e.name == "record_output")
+        assert output_entry.target is not None
+        assert output_entry.target.strategies[0].by == "table_cell"
+        assert output_entry.target.strategies[0].row_anchor == "Regular Savings"
+        assert output_entry.target.strategies[0].column_header == "Available Balance"
+
         await browser.close()
 
 

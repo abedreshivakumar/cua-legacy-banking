@@ -17,7 +17,7 @@ from cua.discovery.targeting import target_from_facts
 from cua.surface.hittest import hit_test
 from cua.surface.resolve import frame_for_scope, resolve
 
-_NAVIGATION_GRACE_MS = 1500
+_NAVIGATION_GRACE_MS = 400
 
 
 async def _click_and_settle(page: Page, clicker: Any, frame_path: list[str] | None) -> None:

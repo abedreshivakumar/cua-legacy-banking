@@ -1,6 +1,7 @@
 """The discovery loop: observe -> decide -> act, with no coordinate ever
 trusted past the moment it's acted on (docs/DECISIONS.md D0/D1/D2)."""
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -10,6 +11,7 @@ from cua.artifact.targets import TargetDescriptor
 from cua.discovery.actions import execute_action
 from cua.discovery.model_client import ModelClient
 from cua.discovery.recorder import verify_output_on_page
+from cua.discovery.targeting import locate_output_target
 
 MAX_STEPS = 20
 # record_output is handled separately — it needs DOM verification, not just logging.
@@ -33,6 +35,7 @@ class DiscoveryResult:
     summary: str
     action_log: list[ActionLogEntry] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
+    run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
 async def _state_signature(page: Page) -> str:
@@ -80,9 +83,13 @@ def _screenshot_result(block: Any, screenshot_b64: str | None) -> dict:
 async def run_discovery(
     page: Page, client: ModelClient, goal: str, *, max_steps: int = MAX_STEPS
 ) -> DiscoveryResult:
+    run_id = str(uuid.uuid4())
     messages: list[dict] = [{"role": "user", "content": [{"type": "text", "text": goal}]}]
     action_log: list[ActionLogEntry] = []
     nudged = False
+
+    def make_result(status: Any, summary: str) -> DiscoveryResult:
+        return DiscoveryResult(status, summary, action_log, messages, run_id)
 
     for step in range(1, max_steps + 1):
         response = await client.next_turn(messages)
@@ -97,15 +104,13 @@ async def run_discovery(
                 )
 
         if response.stop_reason == "refusal":
-            return DiscoveryResult("escalated", "model refused", action_log, messages)
+            return make_result("escalated", "model refused")
 
         tool_use_blocks = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
 
         if not tool_use_blocks:
             if nudged:
-                return DiscoveryResult(
-                    "dead_end", "model stopped calling tools twice in a row", action_log, messages
-                )
+                return make_result("dead_end", "model stopped calling tools twice in a row")
             nudged = True
             messages.append(
                 {
@@ -135,16 +140,12 @@ async def run_discovery(
             if name == "goal_complete":
                 tool_results.append(_ok_result(block))
                 messages.append({"role": "user", "content": tool_results})
-                return DiscoveryResult(
-                    "completed", raw_input.get("summary", ""), action_log, messages
-                )
+                return make_result("completed", raw_input.get("summary", ""))
 
             if name == "request_human":
                 tool_results.append(_ok_result(block))
                 messages.append({"role": "user", "content": tool_results})
-                return DiscoveryResult(
-                    "escalated", raw_input.get("reason", ""), action_log, messages
-                )
+                return make_result("escalated", raw_input.get("reason", ""))
 
             if name == "record_output":
                 claimed = raw_input.get("value", "")
@@ -153,14 +154,18 @@ async def run_discovery(
                         _error_result(block, f"value {claimed!r} not found on the current page")
                     )
                     messages.append({"role": "user", "content": tool_results})
-                    return DiscoveryResult(
-                        "escalated",
-                        f"record_output mismatch: claimed {claimed!r} is not on screen",
-                        action_log,
-                        messages,
+                    return make_result(
+                        "escalated", f"record_output mismatch: claimed {claimed!r} is not on screen"
                     )
+                output_target = await locate_output_target(page, claimed)
                 action_log.append(
-                    ActionLogEntry(step=step, kind="custom_tool", name=name, input=raw_input)
+                    ActionLogEntry(
+                        step=step,
+                        kind="custom_tool",
+                        name=name,
+                        input=raw_input,
+                        target=output_target,
+                    )
                 )
                 tool_results.append(_ok_result(block))
                 continue
@@ -197,4 +202,4 @@ async def run_discovery(
 
         messages.append({"role": "user", "content": tool_results})
 
-    return DiscoveryResult("max_steps", f"stopped after {max_steps} steps", action_log, messages)
+    return make_result("max_steps", f"stopped after {max_steps} steps")
