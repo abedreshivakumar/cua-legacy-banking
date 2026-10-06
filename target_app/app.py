@@ -48,8 +48,23 @@ async def _apply_route_faults(
         return None
 
     if spec.kind == "interstitial":
+        # A plain <a href> Continue link only works for a GET-triggered
+        # interstitial — a POST-triggered one (e.g. the search submit) needs
+        # its original form data resubmitted, or Continue 405s against a
+        # POST-only route. Found by actually replaying a recovery, not by
+        # inspection — see docs/DECISIONS.md.
+        form_fields: dict[str, str] | None = None
+        if request.method == "POST":
+            form = await request.form()
+            form_fields = {k: str(v) for k, v in form.items()}
         return templates.TemplateResponse(
-            request, "interstitial.html", {"continue_url": str(request.url)}
+            request,
+            "interstitial.html",
+            {
+                "continue_url": str(request.url),
+                "continue_method": request.method,
+                "form_fields": form_fields,
+            },
         )
 
     if spec.kind == "http500":

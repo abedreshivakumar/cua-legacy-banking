@@ -4,7 +4,16 @@
 <table border="1" cellpadding="8"><tr><td>
 <font size="2"><b>SYSTEM NOTICE</b></font><br>
 Batch posting in progress. Please wait.<br><br>
+{% if continue_method == "POST" %}
+<form method="post" action="{{ continue_url }}">
+{% for key, value in form_fields.items() %}
+<input type="hidden" name="{{ key }}" value="{{ value }}">
+{% endfor %}
+<input type="submit" value="Continue">
+</form>
+{% else %}
 <a href="{{ continue_url }}">Continue</a>
+{% endif %}
 </td></tr></table>
 </center>
 </body>

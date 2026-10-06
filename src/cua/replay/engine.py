@@ -1,52 +1,35 @@
 """Deterministic replay: run a compiled capability against a live page,
 with no model in the decision loop. Login happens before this is called
-(see docs/DECISIONS.md D3) — entry.login_script_ref is advisory metadata,
-not something this engine dispatches dynamically.
+(see docs/DECISIONS.md D3) — entry.login_script_ref is advisory metadata.
+A caller-supplied `login_fn` is the one exception: a recoverable
+`relogin` handler needs to actually re-authenticate mid-run, and reuses
+whatever the caller used for the initial login, never a dynamic lookup
+of the script_ref string. Detector matching and handler execution live
+in recovery.py — this file is the per-step act/wait/advance loop.
 """
 
-import os
 import re
 import time
 import uuid
-from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from playwright.async_api import Page
 
-from cua.artifact.conditions import Condition
-from cua.artifact.schema import Capability, Detector, OutputField, Step
+from cua.artifact.schema import Capability, OutputField, Step
 from cua.artifact.store import content_sha256
 from cua.replay.checks import evaluate
-from cua.replay.result import (
-    BusinessOutcomeResult,
-    Escalated,
-    Failed,
-    RunResult,
-    StepTrace,
-    Succeeded,
+from cua.replay.recovery import (
+    LoginFn,
+    RecoveryState,
+    armed_detector,
+    race_post_and_detectors,
+    run_handler,
 )
-from cua.replay.templating import render
-from cua.surface.resolve import frame_for_scope, resolve
+from cua.replay.result import Failed, RunResult, StepTrace, Succeeded
+from cua.replay.steps import apply_transforms, run_action, wait_for
+from cua.surface.resolve import resolve
 
-POLL_MS = 150
-
-
-def _apply_transforms(raw: str, transforms: list[str]) -> Any:
-    value: Any = raw
-    for t in transforms:
-        if t == "strip":
-            value = str(value).strip()
-        elif t == "remove_dollar_sign":
-            value = str(value).replace("$", "").strip()
-        elif t == "remove_commas":
-            value = str(value).replace(",", "")
-        elif t == "to_decimal":
-            value = Decimal(str(value))
-        elif t == "to_int":
-            value = int(str(value))
-        else:
-            raise ValueError(f"unknown transform: {t}")
-    return value
+MAX_RESTARTS = 2
 
 
 def _validate_inputs(capability: Capability, inputs: dict[str, Any]) -> str | None:
@@ -56,109 +39,6 @@ def _validate_inputs(capability: Capability, inputs: dict[str, Any]) -> str | No
         if param.pattern and not re.match(param.pattern, str(inputs[param.name])):
             return f"input {param.name!r} does not match pattern {param.pattern!r}"
     return None
-
-
-async def _wait_for(
-    page: Page,
-    condition: Condition,
-    *,
-    labels: dict[str, str],
-    inputs: dict[str, Any],
-    outputs: dict[str, Any],
-    timeout_ms: int,
-) -> bool:
-    elapsed = 0
-    while True:
-        if await evaluate(page, condition, labels=labels, inputs=inputs, outputs=outputs):
-            return True
-        if elapsed >= timeout_ms:
-            return False
-        await page.wait_for_timeout(POLL_MS)
-        elapsed += POLL_MS
-
-
-async def _armed_detector(
-    page: Page,
-    capability: Capability,
-    step_id: str,
-    *,
-    labels: dict[str, str],
-    inputs: dict[str, Any],
-    outputs: dict[str, Any],
-) -> Detector | None:
-    armed = [d for d in capability.detectors if d.active == "always" or step_id in d.active]
-    for d in sorted(armed, key=lambda d: -d.priority):
-        if await evaluate(page, d.when, labels=labels, inputs=inputs, outputs=outputs):
-            return d
-    return None
-
-
-async def _race_post_and_detectors(
-    page: Page,
-    step: Step,
-    capability: Capability,
-    *,
-    labels: dict[str, str],
-    inputs: dict[str, Any],
-    outputs: dict[str, Any],
-) -> tuple[bool, Detector | None]:
-    """Poll the step's post-condition and its armed detectors together.
-
-    A detector is checked first on every tick: if a business-outcome page
-    and the post-condition's own fallback branch both happen to go true at
-    once (e.g. post = Any[success-text, not-found-text]), the detector wins
-    — the step is reported as that outcome, never as a bare "succeeded".
-    """
-    elapsed = 0
-    while True:
-        hit = await _armed_detector(
-            page, capability, step.id, labels=labels, inputs=inputs, outputs=outputs
-        )
-        if hit:
-            return False, hit
-        if await evaluate(page, step.post.when, labels=labels, inputs=inputs, outputs=outputs):
-            return True, None
-        if elapsed >= step.post.timeout_ms:
-            return False, None
-        await page.wait_for_timeout(POLL_MS)
-        elapsed += POLL_MS
-
-
-def _result_for_detector(detector: Detector, base: dict, step_id: str) -> RunResult:
-    if detector.kind == "business_outcome":
-        return BusinessOutcomeResult(**base, outcome=detector.outcome or detector.id)
-    if detector.kind == "escalate":
-        return Escalated(**base, reason=f"detector {detector.id} fired", step_id=step_id)
-    # hard_failure, and recoverable (handler execution is a later story —
-    # see docs/DECISIONS.md — surfaced honestly as a hard failure for now).
-    return Failed(
-        **base,
-        code="app_error",
-        step_id=step_id,
-        expected="no hard_failure/unhandled-recoverable detector",
-        observed=f"detector {detector.id!r} ({detector.kind}) fired",
-    )
-
-
-async def _act(
-    handle, page: Page, step: Step, inputs: dict[str, Any], labels: dict[str, str]
-) -> None:
-    value = render(step.value or "", inputs, labels)
-    if step.action == "click":
-        await handle.click()
-    elif step.action == "type":
-        await handle.fill(value)
-    elif step.action == "type_secret":
-        secret = os.environ.get(f"CUA_SECRET_{(step.value or '').upper()}", "")
-        await handle.fill(secret)
-    elif step.action == "select":
-        await handle.select_option(value)
-    elif step.action == "press":
-        await handle.press(value)
-    elif step.action == "extract":
-        pass  # extraction runs after all steps complete, from OutputField.extract
-    else:
-        raise ValueError(f"action {step.action!r} requires a target but isn't handled")
 
 
 async def _extract_outputs(
@@ -179,7 +59,7 @@ async def _extract_outputs(
             raw = await res.handle.evaluate(
                 f"el => el.getAttribute('{field.extract.attr_name}') || ''"
             )
-        outputs[field.name] = _apply_transforms(raw, field.extract.transforms)
+        outputs[field.name] = apply_transforms(raw, field.extract.transforms)
     return outputs, None
 
 
@@ -190,11 +70,15 @@ async def replay(
     *,
     base_url: str = "",
     entry_timeout_ms: int = 10000,
+    login_fn: LoginFn | None = None,
 ) -> RunResult:
     run_id = str(uuid.uuid4())
     labels = capability.labels
     outputs: dict[str, Any] = {}
     trace: list[StepTrace] = []
+    state = RecoveryState()
+    restarts_used = 0
+    has_commit_irreversible = any(s.risk == "commit_irreversible" for s in capability.steps)
 
     def base(**extra: Any) -> dict:
         return {
@@ -203,8 +87,113 @@ async def replay(
             "version": capability.version,
             "effective_sha256": content_sha256(capability),
             "trace": trace,
+            "recoveries": state.recoveries,
             **extra,
         }
+
+    async def goto_entry() -> RunResult | None:
+        await page.goto(base_url.rstrip("/") + capability.entry.route)
+        ready = await wait_for(
+            page,
+            capability.entry.condition,
+            labels=labels,
+            inputs=inputs,
+            outputs=outputs,
+            timeout_ms=entry_timeout_ms,
+        )
+        if not ready:
+            return Failed(
+                **base(
+                    code="target_unresolved",
+                    step_id="<entry>",
+                    expected="entry ready",
+                    observed="timed out",
+                )
+            )
+        return None
+
+    async def run_step(step: Step) -> tuple[Literal["advance", "restart"], RunResult | None]:
+        should_act = True
+        while True:
+            if should_act:
+                hit = await armed_detector(
+                    page, capability, step.id, labels=labels, inputs=inputs, outputs=outputs
+                )
+                if hit:
+                    action, result = await run_handler(
+                        page,
+                        hit,
+                        step,
+                        labels=labels,
+                        login_fn=login_fn,
+                        has_commit_irreversible=has_commit_irreversible,
+                        state=state,
+                        base=base,
+                    )
+                    if result is not None:
+                        return "advance", result
+                    if action == "restart_entry":
+                        return "restart", None
+                    continue  # resume_step / retry_step before acting: re-check and proceed
+
+                if step.pre is not None:
+                    pre_ok = await evaluate(
+                        page, step.pre, labels=labels, inputs=inputs, outputs=outputs
+                    )
+                    if not pre_ok:
+                        return "advance", Failed(
+                            **base(
+                                code="target_unresolved",
+                                step_id=step.id,
+                                expected="pre-condition true",
+                                observed="pre-condition false",
+                            )
+                        )
+
+                start = time.monotonic()
+                strategy_used, act_error = await run_action(page, step, inputs, labels)
+                if act_error is not None:
+                    return "advance", Failed(**base(**act_error, step_id=step.id))
+
+                trace.append(
+                    StepTrace(
+                        step_id=step.id,
+                        strategy_used=strategy_used,
+                        duration_ms=int((time.monotonic() - start) * 1000),
+                    )
+                )
+                should_act = False
+
+            satisfied, hit = await race_post_and_detectors(
+                page, step, capability, labels=labels, inputs=inputs, outputs=outputs
+            )
+            if satisfied:
+                return "advance", None
+            if hit is None:
+                return "advance", Failed(
+                    **base(
+                        code="postcondition_timeout",
+                        step_id=step.id,
+                        expected=str(step.post.when),
+                        observed="post-condition not satisfied in time",
+                    )
+                )
+
+            action, result = await run_handler(
+                page,
+                hit,
+                step,
+                labels=labels,
+                login_fn=login_fn,
+                has_commit_irreversible=has_commit_irreversible,
+                state=state,
+                base=base,
+            )
+            if result is not None:
+                return "advance", result
+            if action == "restart_entry":
+                return "restart", None
+            should_act = action == "retry_step"
 
     error = _validate_inputs(capability, inputs)
     if error:
@@ -214,100 +203,32 @@ async def replay(
             )
         )
 
-    await page.goto(base_url.rstrip("/") + capability.entry.route)
-    entry_ready = await _wait_for(
-        page,
-        capability.entry.condition,
-        labels=labels,
-        inputs=inputs,
-        outputs=outputs,
-        timeout_ms=entry_timeout_ms,
-    )
-    if not entry_ready:
-        return Failed(
-            **base(
-                code="target_unresolved",
-                step_id="<entry>",
-                expected="entry ready",
-                observed="timed out",
-            )
-        )
+    entry_error = await goto_entry()
+    if entry_error:
+        return entry_error
 
-    for step in capability.steps:
-        start = time.monotonic()
-
-        hit = await _armed_detector(
-            page, capability, step.id, labels=labels, inputs=inputs, outputs=outputs
-        )
-        if hit:
-            return _result_for_detector(hit, base(), step.id)
-
-        if step.pre is not None:
-            pre_ok = await evaluate(page, step.pre, labels=labels, inputs=inputs, outputs=outputs)
-            if not pre_ok:
+    step_index = 0
+    while step_index < len(capability.steps):
+        status, result = await run_step(capability.steps[step_index])
+        if result is not None:
+            return result
+        if status == "restart":
+            restarts_used += 1
+            if restarts_used > MAX_RESTARTS:
                 return Failed(
                     **base(
-                        code="target_unresolved",
-                        step_id=step.id,
-                        expected="pre-condition true",
-                        observed="pre-condition false",
+                        code="recovery_exhausted",
+                        step_id=capability.steps[step_index].id,
+                        expected=f"<= {MAX_RESTARTS} restarts",
+                        observed=f"restart {restarts_used}",
                     )
                 )
-
-        strategy_used = None
-        if step.target is not None:
-            res = await resolve(page, step.target, labels)
-            if res.handle is None:
-                return Failed(
-                    **base(
-                        code="target_unresolved",
-                        step_id=step.id,
-                        expected=f"one of strategies {[s.by for s in step.target.strategies]}",
-                        observed=f"attempts: {res.attempts}",
-                    )
-                )
-            strategy_used = res.strategy_used
-            await _act(res.handle, page, step, inputs, labels)
-            # Let the action's effect (often a frame-level navigation, since
-            # the mock app is server-rendered) fully land before polling —
-            # otherwise the detector check and the post-condition check can
-            # straddle the transition, each reading a different DOM state.
-            settle_frame = frame_for_scope(page, step.target.scope) or page.main_frame
-            await settle_frame.wait_for_load_state("domcontentloaded")
-        elif step.action == "navigate":
-            await page.goto(render(step.value or "", inputs, labels))
-        elif step.action == "press":
-            await page.keyboard.press(render(step.value or "", inputs, labels))
-        else:
-            raise ValueError(f"step {step.id!r} ({step.action}) needs a target")
-
-        trace.append(
-            StepTrace(
-                step_id=step.id,
-                strategy_used=strategy_used,
-                duration_ms=int((time.monotonic() - start) * 1000),
-            )
-        )
-
-        satisfied, hit = await _race_post_and_detectors(
-            page,
-            step,
-            capability,
-            labels=labels,
-            inputs=inputs,
-            outputs=outputs,
-        )
-        if hit:
-            return _result_for_detector(hit, base(), step.id)
-        if not satisfied:
-            return Failed(
-                **base(
-                    code="postcondition_timeout",
-                    step_id=step.id,
-                    expected=str(step.post.when),
-                    observed="post-condition not satisfied in time",
-                )
-            )
+            entry_error = await goto_entry()
+            if entry_error:
+                return entry_error
+            step_index = 0
+            continue
+        step_index += 1
 
     outputs, failing_field = await _extract_outputs(page, capability, labels=labels)
     if failing_field is not None:

@@ -31,6 +31,7 @@ class RunResultBase(BaseModel):
     version: str
     effective_sha256: str
     trace: list[StepTrace] = []
+    recoveries: list[str] = []  # detector ids that fired and were recovered from, in order
     side_effects_committed: Literal["none", "possible", "yes"] = "none"
 
 
