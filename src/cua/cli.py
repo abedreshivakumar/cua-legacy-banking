@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 from cua.artifact.store import capability_from_yaml
+from cua.control.lease import ControlLease
+from cua.control.operator import describe
 from cua.replay.engine import replay as run_replay
 from cua.replay.result import RunResult
 
@@ -17,6 +19,8 @@ app = typer.Typer(
     help="Discover a legacy UI flow once with an LLM; replay it deterministically forever after.",
     pretty_exceptions_show_locals=False,  # never print local vars (may hold secrets) on crash
 )
+control_app = typer.Typer(help="Operator-side commands for a live-session handoff.")
+app.add_typer(control_app, name="control")
 
 
 @app.command()
@@ -62,6 +66,30 @@ def replay(
     typer.echo(result.model_dump_json(indent=2))
     if result.status not in ("succeeded", "business_outcome"):
         raise typer.Exit(code=1)
+
+
+_DEFAULT_LEASE_PATH = Path(".cua/control_lease.json")
+
+
+@control_app.command("status")
+def control_status(
+    lease_path: Path = typer.Option(_DEFAULT_LEASE_PATH, "--lease-path"),
+) -> None:
+    """Show whether a discovery run is currently waiting for a human."""
+    typer.echo(describe(ControlLease(lease_path)))
+
+
+@control_app.command("release")
+def control_release(
+    lease_path: Path = typer.Option(_DEFAULT_LEASE_PATH, "--lease-path"),
+) -> None:
+    """Hand control back to the agent after making whatever fix was needed."""
+    lease = ControlLease(lease_path)
+    if lease.state != "human":
+        typer.echo("Nothing to release — the agent already holds control.")
+        raise typer.Exit(code=1)
+    lease.release_to_agent()
+    typer.echo("Released — the agent will resume on its next poll.")
 
 
 @app.command(name="crash-test", hidden=True)

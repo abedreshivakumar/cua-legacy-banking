@@ -8,6 +8,7 @@ from typing import Any, Literal
 from playwright.async_api import Page
 
 from cua.artifact.targets import TargetDescriptor
+from cua.control.lease import ControlLease
 from cua.discovery.actions import execute_action
 from cua.discovery.model_client import ModelClient
 from cua.discovery.recorder import verify_output_on_page
@@ -81,7 +82,13 @@ def _screenshot_result(block: Any, screenshot_b64: str | None) -> dict:
 
 
 async def run_discovery(
-    page: Page, client: ModelClient, goal: str, *, max_steps: int = MAX_STEPS
+    page: Page,
+    client: ModelClient,
+    goal: str,
+    *,
+    max_steps: int = MAX_STEPS,
+    control_lease: ControlLease | None = None,
+    handoff_timeout_s: float = 600,
 ) -> DiscoveryResult:
     run_id = str(uuid.uuid4())
     messages: list[dict] = [{"role": "user", "content": [{"type": "text", "text": goal}]}]
@@ -143,9 +150,51 @@ async def run_discovery(
                 return make_result("completed", raw_input.get("summary", ""))
 
             if name == "request_human":
+                reason = raw_input.get("reason", "")
+                if control_lease is not None:
+                    control_lease.hand_to_human(reason)
+                    resumed = await control_lease.wait_for_release(timeout_s=handoff_timeout_s)
+                    if resumed:
+                        # Fold the resume nudge into THIS SAME user turn's
+                        # content, alongside the tool_result — not a
+                        # second back-to-back user message, which would
+                        # violate the API's strict role alternation.
+                        tool_results.append(_ok_result(block))
+                        tool_results.append(
+                            {
+                                "type": "text",
+                                "text": (
+                                    "A human operator took over, made changes, and handed "
+                                    "control back. Continue working toward the goal from "
+                                    "the current screen."
+                                ),
+                            }
+                        )
+                        action_log.append(
+                            ActionLogEntry(
+                                step=step,
+                                kind="custom_tool",
+                                name="human_handoff",
+                                input={"reason": reason, "resumed": True},
+                            )
+                        )
+                        # The human may have changed the screen — any other
+                        # tool calls queued in this same batch are now
+                        # against stale state, same as a mid-batch
+                        # navigation (see the staleness check below).
+                        stale = True
+                        continue
+                    action_log.append(
+                        ActionLogEntry(
+                            step=step,
+                            kind="custom_tool",
+                            name="human_handoff",
+                            input={"reason": reason, "resumed": False},
+                        )
+                    )
                 tool_results.append(_ok_result(block))
                 messages.append({"role": "user", "content": tool_results})
-                return make_result("escalated", raw_input.get("reason", ""))
+                return make_result("escalated", reason)
 
             if name == "record_output":
                 claimed = raw_input.get("value", "")
