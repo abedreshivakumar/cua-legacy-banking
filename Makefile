@@ -1,4 +1,4 @@
-.PHONY: setup app test lint demo-offline discover evidence
+.PHONY: setup app test lint discover-spike evidence
 
 setup:
 	uv sync
@@ -11,14 +11,17 @@ test:
 	uv run pytest -q
 
 lint:
-	uv run ruff check src/ tests/ target_app/ --fix
-	uv run ruff format src/ tests/ target_app/
+	uv run ruff check src/ tests/ target_app/ scripts/ --fix
+	uv run ruff format src/ tests/ target_app/ scripts/
+	uv run mypy src/
 
-demo-offline:
-	uv run pytest -q -m "not live"
+# Costs a small amount of real Anthropic API credit — a capped, 6-step live
+# run. See docs/DECISIONS.md's "G0 spike" entry.
+discover-spike:
+	uv run python scripts/spike_g0.py
 
-discover:
-	uv run cua discover --target corebank-local --goal "$${GOAL}"
-
+# Offline — ScriptedModelClient, zero model calls. Writes
+# evidence/demo_member_inquiry/, clearly labeled as a demo run, not the
+# real live-LLM evidence the brief asks for.
 evidence:
-	uv run python scripts/produce_evidence.py
+	uv run python scripts/collect_evidence.py

@@ -2,26 +2,31 @@
 
 A system that lets an LLM learn a task once on a legacy, API-less web app, then run it again — deterministically, with no model call — forever after.
 
-The model discovers. The run compiles into a typed, reviewable **capability**. Replay is how an AI agent invokes that capability in production.
+The model **discovers**. The run **compiles** into a typed, reviewable **capability** artifact. **Replay** is how an AI agent invokes that capability in production, with no model in the loop. A human can take over mid-run when the system gets stuck, and a policy/approval gate stands between the agent and anything irreversible.
 
-See `docs/DECISIONS.md` for the design rationale and every non-obvious call made along the way, and `artifacts/adopted_standards.md` for the engineering conventions this project holds itself to.
+See [`REPORT.md`](REPORT.md) for the full design writeup, [`docs/DECISIONS.md`](docs/DECISIONS.md) for the decision log and every real bug found building this, and [`artifacts/adopted_standards.md`](artifacts/adopted_standards.md) for the engineering conventions this project holds itself to.
 
 ## Status
 
-This is a work in progress, built story by story. What's real today:
+Built story by story, S1 through S15. What's real today:
 
 | Piece | Status |
 |---|---|
-| Mock legacy target app (frameset, nested tables, no test IDs, injectable faults) | ✅ built |
+| Mock legacy target app (frameset, nested tables, no test IDs, injectable faults, a real transfer flow) | ✅ built |
 | Capability artifact schema (typed inputs/outputs, ranked element-targeting strategies, condition language) | ✅ built |
 | Frame-aware hit-testing + the shared target resolver | ✅ built |
+| LLM-driven discovery loop (`claude-opus-5-5`, computer-use toolset) — offline-testable via a `ScriptedModelClient` fixture, zero model calls | ✅ built |
+| Compiler (discovery trace → reviewable draft capability) | ✅ built |
 | Deterministic replay engine + the `succeeded \| business_outcome \| failed \| escalated \| blocked_pending_approval` result contract | ✅ built |
-| `cua replay` CLI | ✅ built |
-| LLM-driven discovery loop (`claude-opus-5-5`, computer-use toolset) | 🚧 in progress — a capped dev spike exists (`scripts/spike_g0.py`), the production `cua discover` command does not yet |
-| Compiler (discovery trace → reviewable capability) | 🚧 not yet started |
-| Human-in-the-loop handoff, safety/approval gate, redaction | 🚧 not yet started |
-
-The demo path below reflects what's real right now: replaying a hand-written capability against the mock app. Once discovery and the compiler land, this README will show the full `discover → compile → replay` flow the brief asks for.
+| Recovery handlers (dismiss / relogin / backoff) for recoverable faults | ✅ built |
+| Probe discovery → synthesized business-outcome detectors, with a real negative control | ✅ built |
+| Relabel drift resistance (label-independent fallback strategies) | ✅ built |
+| Safety: network-level policy guard + single-use commit-approval gate | ✅ built |
+| Redaction: text (pattern + Luhn + declared-literal) and pixel-level screenshot masking | ✅ built |
+| Live-session handoff: a human attaches over CDP to the agent's own browser, then hands control back | ✅ built |
+| Evidence-writing tooling + `scripts/collect_evidence.py` | ✅ built |
+| `cua replay`, `cua control status/release` CLI | ✅ built |
+| A real, live `claude-opus-5-5`-driven discovery run with evidence | ⏳ deliberately gated behind a one-time, capped API spend — not yet run |
 
 ## Setup
 
@@ -35,7 +40,7 @@ cp .env.example .env
 Fill in `.env`:
 
 ```
-ANTHROPIC_API_KEY=       # only needed for discovery (scripts/spike_g0.py) — not needed for replay or tests
+ANTHROPIC_API_KEY=       # only needed for a live discovery run (scripts/spike_g0.py) — not for replay or tests
 COREBANK_USER=teller1
 COREBANK_PASSWORD=       # pick anything; the mock app just needs it to match on login
 COREBANK_PORT=8800
@@ -43,13 +48,13 @@ COREBANK_PORT=8800
 
 ## Running without live services
 
-Everything except the discovery spike runs fully offline — no API key, no network:
+Everything except the G0 spike runs fully offline — no API key, no network, real browser + real mock app:
 
 ```bash
-make test   # starts the mock app in-process per test, no external services
+make test   # starts the mock app in-process per test
 ```
 
-32 tests pass as of this writing: the hostile mock app, every fault mode, the hit-test resolver, the artifact schema, the ranked-strategy resolver, and the replay engine against real seeded data.
+77 tests pass as of this writing, including the hostile mock app, every fault mode, discovery/compile/replay/recovery against a real browser, the policy and approval gate, redaction (text + pixel), and the live-session handoff — all with a `ScriptedModelClient` standing in for the API.
 
 ## Demo path
 
@@ -59,7 +64,7 @@ make test   # starts the mock app in-process per test, no external services
 make app   # http://127.0.0.1:8800
 ```
 
-**2. Replay the hand-written `member_inquiry` capability** (`capabilities/member_inquiry/0.0.1.yaml`) against it — no model call, fully deterministic:
+**2. Replay the hand-written `member_inquiry` capability** (`capabilities/member_inquiry/0.0.1.yaml`) — read-only, no model call, fully deterministic:
 
 ```bash
 # A member that exists
@@ -79,35 +84,61 @@ Each prints the typed `RunResult` as JSON and exits 0 for `succeeded`/`business_
   "status": "succeeded",
   "outputs": { "savings_balance": "2345.67" },
   "trace": [
-    { "step_id": "enter_member_no", "strategy_used": "attr", "duration_ms": 9 },
-    { "step_id": "submit_search", "strategy_used": "text", "duration_ms": 54 }
+    { "step_id": "enter_member_no", "strategy_used": "attr", "duration_ms": 9, "drifted": false },
+    { "step_id": "submit_search", "strategy_used": "text", "duration_ms": 54, "drifted": false }
   ]
 }
 ```
 
 Add `--headed` to watch the browser instead of running headless, and `--base-url` if the mock app isn't on the default port.
 
-**3. (Costs a small amount of API credit) Run the G0 discovery spike** — a capped, 6-step live `claude-opus-5-5` run against the mock app, proving the computer-use toolset and the frame-aware hit-test work together:
+**3. The transfer flow and the safety gate.** `capabilities/transfer_funds/0.0.1.yaml` is `irreversible_write` — `cua replay` doesn't wire up the policy/approval gate by default (there's no commit route to protect without one configured), so this flow is exercised directly against `src/cua/replay/engine.py`'s `policy`/`approval_store` parameters in `tests/integration/test_policy_approval.py`, not the CLI. Run that file to see it live: no approval record → `blocked_pending_approval`; with one → succeeds and returns a real confirmation number, consuming the record; reusing it → a hard `policy_denied`.
+
+**4. Live-session handoff.** When a discovery run calls `request_human`, it writes a control lease a separate operator process can see:
 
 ```bash
-uv run python scripts/spike_g0.py
+uv run cua control status --lease-path .cua/control_lease.json
+uv run cua control release --lease-path .cua/control_lease.json
 ```
 
-This is a dev-only script, not the production discovery command — see `docs/DECISIONS.md`'s "G0 spike" entry.
+`tests/integration/test_control_handoff.py` shows the full loop: a human attaches over CDP to the agent's own live browser, confirms it's the real DOM state (not a snapshot), releases the lease, and discovery resumes rather than terminating.
+
+**5. Evidence.** Runs the real discovery → compile → replay pipeline offline and writes a reviewable bundle:
+
+```bash
+make evidence   # writes evidence/demo_member_inquiry/ — a demo run, not the required live one
+```
+
+**6. (Costs a small amount of real API credit) The G0 discovery spike** — a capped, 6-step live `claude-opus-5-5` run proving the computer-use toolset and the frame-aware hit-test work together:
+
+```bash
+make discover-spike
+```
+
+This is a dev-only script, not the production discovery path — see `docs/DECISIONS.md`'s "G0 spike" entry. The brief's required real live discovery run (with its own `/evidence/` output) is a separate, one-time step, still pending.
 
 ## Repo layout
 
 ```
-target_app/        the mock legacy banking UI (FastAPI + Jinja), with fault injection via POST /__faults
+target_app/           the mock legacy banking UI (FastAPI + Jinja): frameset, nested tables, no test IDs,
+                       fault injection via POST /__faults, a real (gated) transfer flow
 src/cua/
-  artifact/         the capability schema, condition language, YAML/JSON store
-  surface/          frame-aware hit-testing and the ranked-strategy element resolver
-  replay/           the deterministic replay engine and result contract
-  cli.py            `cua replay`, `cua version`
-capabilities/       capability artifacts (currently: member_inquiry 0.0.1, hand-written)
-tests/              unit + integration tests (integration tests run a real Playwright browser against the real mock app)
-scripts/spike_g0.py the dev-only live discovery spike
-docs/DECISIONS.md   the decision log — design choices, alternatives, and bugs found along the way
+  artifact/            the capability schema, condition language, element-targeting strategies, YAML/JSON store
+  surface/             frame-aware hit-testing and the ranked-strategy element resolver
+  discovery/           the LLM-driven discovery loop, custom tools, probe-run detector synthesis
+  compile/             discovery trace -> reviewable draft Capability
+  replay/               the deterministic replay engine, recovery handlers, result contract
+  safety/              the network policy guard, commit-approval store, text + pixel redaction
+  control/             the control lease and the terminal operator's CDP attach
+  evidence/            transcript/replay-log writers and INDEX.md generation
+  cli.py               `cua replay`, `cua control status/release`, `cua version`
+capabilities/          capability artifacts: member_inquiry (read-only), transfer_funds (irreversible_write)
+evidence/              evidence bundles (demo_member_inquiry/ is offline; the real one is pending)
+tests/                 unit + integration tests (integration tests run a real Playwright browser against the real mock app)
+scripts/
+  spike_g0.py           the dev-only capped live discovery spike
+  collect_evidence.py   the offline evidence script (make evidence)
+docs/DECISIONS.md      the decision log — design choices, alternatives, and every real bug found along the way
 ```
 
 ## Running the mock app's fault injection

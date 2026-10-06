@@ -1,5 +1,5 @@
 {
-  "run_id": "7b54b4a6-e2f7-4989-b193-c086a989a63b",
+  "run_id": "77147fdc-ded2-430a-8921-11fee17af168",
   "capability": "member_inquiry_demo",
   "version": "0.0.1",
   "effective_sha256": "55692944cdfcc69a3fc33f2c25ade2c5f9f04baa483e80e7889009ef969024d7",
@@ -7,7 +7,7 @@
     {
       "step_id": "step_1_left_click",
       "strategy_used": "attr",
-      "duration_ms": 36,
+      "duration_ms": 52,
       "drifted": false
     },
     {
@@ -19,7 +19,7 @@
     {
       "step_id": "step_3_left_click",
       "strategy_used": "text",
-      "duration_ms": 25,
+      "duration_ms": 37,
       "drifted": false
     }
   ],
