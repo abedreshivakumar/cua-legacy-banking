@@ -8,7 +8,7 @@ See [`REPORT.md`](REPORT.md) for the full design writeup, [`docs/DECISIONS.md`](
 
 ## Status
 
-Built story by story, S1 through S15. What's real today:
+Built story by story, S1 through S16. What's real today:
 
 | Piece | Status |
 |---|---|
@@ -26,7 +26,7 @@ Built story by story, S1 through S15. What's real today:
 | Live-session handoff: a human attaches over CDP to the agent's own browser, then hands control back | ✅ built |
 | Evidence-writing tooling + `scripts/collect_evidence.py` | ✅ built |
 | `cua replay`, `cua control status/release` CLI | ✅ built |
-| A real, live `claude-opus-5-5`-driven discovery run with evidence | ⏳ deliberately gated behind a one-time, capped API spend — not yet run |
+| A real, live `claude-opus-5-5`-driven discovery run with evidence | ✅ done — `evidence/live_member_inquiry/` |
 
 ## Setup
 
@@ -40,7 +40,7 @@ cp .env.example .env
 Fill in `.env`:
 
 ```
-ANTHROPIC_API_KEY=       # only needed for a live discovery run (scripts/spike_g0.py) — not for replay or tests
+ANTHROPIC_API_KEY=       # only needed for a live discovery run (spike_g0.py, collect_evidence_live.py) — not for replay or tests
 COREBANK_USER=teller1
 COREBANK_PASSWORD=       # pick anything; the mock app just needs it to match on login
 COREBANK_PORT=8800
@@ -103,11 +103,14 @@ uv run cua control release --lease-path .cua/control_lease.json
 
 `tests/integration/test_control_handoff.py` shows the full loop: a human attaches over CDP to the agent's own live browser, confirms it's the real DOM state (not a snapshot), releases the lease, and discovery resumes rather than terminating.
 
-**5. Evidence.** Runs the real discovery → compile → replay pipeline offline and writes a reviewable bundle:
+**5. Evidence.** Runs the real discovery → compile → replay pipeline and writes a reviewable bundle:
 
 ```bash
-make evidence   # writes evidence/demo_member_inquiry/ — a demo run, not the required live one
+make evidence        # offline — writes evidence/demo_member_inquiry/, a ScriptedModelClient demo run
+uv run python scripts/collect_evidence_live.py   # costs real API credit — a genuine live claude-opus-5-5 run
 ```
+
+The live one is already in the repo at `evidence/live_member_inquiry/` — a real discovery session, compiled into `member_inquiry_live-0.0.1.yaml`, then replayed deterministically. It's also what caught a real bug the offline fixtures couldn't: every scripted test hardcodes the declared input's name as `member_no`, but a real model is free to name it anything — this run named it `member_number` — and the first version of this script assumed the fixture convention and crashed on replay until it was fixed to read the name back off the compiled capability (`docs/DECISIONS.md` D30).
 
 **6. (Costs a small amount of real API credit) The G0 discovery spike** — a capped, 6-step live `claude-opus-5-5` run proving the computer-use toolset and the frame-aware hit-test work together:
 
@@ -115,7 +118,7 @@ make evidence   # writes evidence/demo_member_inquiry/ — a demo run, not the r
 make discover-spike
 ```
 
-This is a dev-only script, not the production discovery path — see `docs/DECISIONS.md`'s "G0 spike" entry. The brief's required real live discovery run (with its own `/evidence/` output) is a separate, one-time step, still pending.
+This is a dev-only script, not the production discovery path — see `docs/DECISIONS.md`'s "G0 spike" entry.
 
 ## Repo layout
 
@@ -133,11 +136,12 @@ src/cua/
   evidence/            transcript/replay-log writers and INDEX.md generation
   cli.py               `cua replay`, `cua control status/release`, `cua version`
 capabilities/          capability artifacts: member_inquiry (read-only), transfer_funds (irreversible_write)
-evidence/              evidence bundles (demo_member_inquiry/ is offline; the real one is pending)
+evidence/              evidence bundles: demo_member_inquiry/ (offline), live_member_inquiry/ (real live run)
 tests/                 unit + integration tests (integration tests run a real Playwright browser against the real mock app)
 scripts/
-  spike_g0.py           the dev-only capped live discovery spike
-  collect_evidence.py   the offline evidence script (make evidence)
+  spike_g0.py                the dev-only capped live discovery spike
+  collect_evidence.py        the offline evidence script (make evidence)
+  collect_evidence_live.py   the real evidence script — live API calls
 docs/DECISIONS.md      the decision log — design choices, alternatives, and every real bug found along the way
 ```
 

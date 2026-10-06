@@ -1,0 +1,13 @@
+run_id: 2aab947b-cd4e-40c3-b764-709a419da457
+status: completed
+summary: Looked up member [REDACTED:DECLARED] (Ivy Mockington) in Member Inquiry; recorded Regular Savings available balance of $2345.67.
+
+[step 1] member_action/screenshot: {}
+[step 2] custom_tool/declare_input: {"name": "member_number", "rationale": "Member number to look up; varies per run.", "value": "[REDACTED:DECLARED]"}
+[step 2] member_action/left_click: {"coordinate": [336, 97]}
+[step 2] member_action/type: {"text": "[REDACTED:DECLARED]"}
+[step 2] member_action/left_click: {"coordinate": [215, 124]}
+[step 3] member_action/screenshot: {}
+[step 4] member_action/zoom: {"region": [190, 60, 450, 295]}
+[step 5] custom_tool/record_output: {"name": "regular_savings_balance", "rationale": "Available Balance shown for the Regular Savings account on member [REDACTED:DECLARED]'s inquiry screen.", "value": "$ 2345.67"}
+[step 5] custom_tool/assert_checkpoint: {"description": "Member inquiry results for member [REDACTED:DECLARED] (Ivy Mockington, ACTIVE) displayed, showing Regular Savings available balance $2345.67."}

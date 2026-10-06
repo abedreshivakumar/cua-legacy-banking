@@ -1,0 +1,32 @@
+{
+  "run_id": "15316827-a715-4e53-9854-762d147fe6e0",
+  "capability": "member_inquiry_live",
+  "version": "0.0.1",
+  "effective_sha256": "0c39d437b0b9e8af5cafa293aa5a536d7935ceee3e231b261777c2fad7b1c08e",
+  "trace": [
+    {
+      "step_id": "step_1_left_click",
+      "strategy_used": "attr",
+      "duration_ms": 31,
+      "drifted": false
+    },
+    {
+      "step_id": "step_2_type",
+      "strategy_used": "attr",
+      "duration_ms": 3,
+      "drifted": false
+    },
+    {
+      "step_id": "step_3_left_click",
+      "strategy_used": "text",
+      "duration_ms": 39,
+      "drifted": false
+    }
+  ],
+  "recoveries": [],
+  "side_effects_committed": "none",
+  "status": "succeeded",
+  "outputs": {
+    "regular_savings_balance": "2345.67"
+  }
+}
