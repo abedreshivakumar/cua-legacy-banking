@@ -6,27 +6,6 @@ The model **discovers**. The run **compiles** into a typed, reviewable **capabil
 
 See [`REPORT.md`](REPORT.md) for the full design writeup, [`docs/DECISIONS.md`](docs/DECISIONS.md) for the decision log and every real bug found building this, and [`artifacts/adopted_standards.md`](artifacts/adopted_standards.md) for the engineering conventions this project holds itself to.
 
-## Status
-
-Built story by story, S1 through S16. What's real today:
-
-| Piece | Status |
-|---|---|
-| Mock legacy target app (frameset, nested tables, no test IDs, injectable faults, a real transfer flow) | ✅ built |
-| Capability artifact schema (typed inputs/outputs, ranked element-targeting strategies, condition language) | ✅ built |
-| Frame-aware hit-testing + the shared target resolver | ✅ built |
-| LLM-driven discovery loop (`claude-opus-5-5`, computer-use toolset) — offline-testable via a `ScriptedModelClient` fixture, zero model calls | ✅ built |
-| Compiler (discovery trace → reviewable draft capability) | ✅ built |
-| Deterministic replay engine + the `succeeded \| business_outcome \| failed \| escalated \| blocked_pending_approval` result contract | ✅ built |
-| Recovery handlers (dismiss / relogin / backoff) for recoverable faults | ✅ built |
-| Probe discovery → synthesized business-outcome detectors, with a real negative control | ✅ built |
-| Relabel drift resistance (label-independent fallback strategies) | ✅ built |
-| Safety: network-level policy guard + single-use commit-approval gate | ✅ built |
-| Redaction: text (pattern + Luhn + declared-literal) and pixel-level screenshot masking | ✅ built |
-| Live-session handoff: a human attaches over CDP to the agent's own browser, then hands control back | ✅ built |
-| Evidence-writing tooling + `scripts/collect_evidence.py` | ✅ built |
-| `cua replay`, `cua control status/release` CLI | ✅ built |
-| A real, live `claude-opus-5-5`-driven discovery run with evidence | ✅ done — `evidence/live_member_inquiry/` |
 
 ## Setup
 
