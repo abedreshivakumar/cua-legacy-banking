@@ -1,0 +1,34 @@
+{
+  "run_id": "d56340f2-4995-4a6c-a8b5-05e141541e1c",
+  "capability": "member_inquiry_live",
+  "version": "0.0.1",
+  "effective_sha256": "0c39d437b0b9e8af5cafa293aa5a536d7935ceee3e231b261777c2fad7b1c08e",
+  "trace": [
+    {
+      "step_id": "step_1_left_click",
+      "strategy_used": "attr",
+      "duration_ms": 43,
+      "drifted": false
+    },
+    {
+      "step_id": "step_2_type",
+      "strategy_used": "attr",
+      "duration_ms": 3,
+      "drifted": false
+    },
+    {
+      "step_id": "step_3_left_click",
+      "strategy_used": "text",
+      "duration_ms": 37,
+      "drifted": false
+    }
+  ],
+  "recoveries": [],
+  "side_effects_committed": "none",
+  "status": "failed",
+  "code": "postcondition_timeout",
+  "step_id": "step_3_left_click",
+  "expected": "type='element_resolvable' target=TargetDescriptor(scope=[ScopeStep(kind='frame', name='work', src_pattern=None, index=None)], expect=ElementExpectation(kind='cell', editable=None, forbidden_text_pattern=None), strategies=[TableCellStrategy(by='table_cell', row_anchor='Regular Savings', column_header='Available Balance')], resolved_from='coordinate')",
+  "observed": "post-condition not satisfied in time",
+  "retryable": false
+}

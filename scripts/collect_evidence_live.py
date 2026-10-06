@@ -45,8 +45,9 @@ MEMBER_NO = "100007"
 
 
 def _start_target_app() -> uvicorn.Server:
-    os.environ.setdefault("COREBANK_USER", "teller1")
-    os.environ.setdefault("COREBANK_PASSWORD", "testpass123")
+    # `or`, not setdefault — see scripts/collect_evidence.py for why.
+    os.environ["COREBANK_USER"] = os.environ.get("COREBANK_USER") or "teller1"
+    os.environ["COREBANK_PASSWORD"] = os.environ.get("COREBANK_PASSWORD") or "testpass123"
     config = uvicorn.Config(app, host=HOST, port=PORT, log_level="warning")
     server = uvicorn.Server(config)
     threading.Thread(target=server.run, daemon=True).start()

@@ -17,6 +17,7 @@ def write_index(
     transcript_path: Path | None = None,
     capability_path: Path | None = None,
     replay_runs: list[tuple[str, RunResult, Path]] | None = None,
+    screenshots: list[tuple[str, Path]] | None = None,
 ) -> Path:
     lines = [f"# {title}", ""]
 
@@ -37,11 +38,24 @@ def write_index(
     if replay_runs:
         lines.append("## Replay runs (deterministic, zero model calls)")
         for label, result, log_path in replay_runs:
+            detail = f"status=`{result.status}`"
+            code = getattr(result, "code", None)
+            if code is not None:
+                detail += f", code=`{code}`"
+            outcome = getattr(result, "outcome", None)
+            if outcome is not None:
+                detail += f", outcome=`{outcome}`"
             lines.append(
-                f"- **{label}**: status=`{result.status}`, run_id=`{result.run_id}`, "
+                f"- **{label}**: {detail}, run_id=`{result.run_id}`, "
                 f"side_effects_committed=`{result.side_effects_committed}` — "
                 f"[{log_path.name}](./{log_path.name})"
             )
+        lines.append("")
+
+    if screenshots:
+        lines.append("## Screenshots")
+        for label, path in screenshots:
+            lines.append(f"- **{label}**: [{path.name}](./{path.name})")
         lines.append("")
 
     path = out_dir / "INDEX.md"

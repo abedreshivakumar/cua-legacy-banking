@@ -61,6 +61,18 @@ def write_replay_log(
     return path
 
 
+def write_screenshot(png_bytes: bytes, out_dir: Path, *, label: str) -> Path:
+    """A richer signal than the structured log alone, for the cases that
+    most need one: a failure or exceptional state. No text redaction
+    applies to an image — a PII-bearing region has to be masked BEFORE
+    the screenshot is taken (safety.visual_redaction), not after; this
+    function just persists whatever bytes it's given."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{label}.png"
+    path.write_bytes(png_bytes)
+    return path
+
+
 def copy_capability(capability: Capability, source_path: Path, out_dir: Path) -> Path:
     """Copies the artifact file itself into the evidence bundle verbatim
     — a capability is already reviewable, nothing in it needs redacting

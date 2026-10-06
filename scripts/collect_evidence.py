@@ -53,8 +53,14 @@ def _tool_use(name: str, input: dict, toolset: bool = True) -> FakeToolUseBlock:
 
 
 def _start_target_app() -> uvicorn.Server:
-    os.environ.setdefault("COREBANK_USER", "teller1")
-    os.environ.setdefault("COREBANK_PASSWORD", "testpass123")
+    # `or` here, not setdefault: importing target_app.app above already ran
+    # its own load_dotenv(), which sets COREBANK_PASSWORD to whatever .env
+    # has — including an empty string if that's literally what's there.
+    # setdefault only fills in a MISSING key, so it's a silent no-op for a
+    # present-but-empty one (found the hard way: an emptied .env made this
+    # script fail to log in with no indication why — see docs/DECISIONS.md).
+    os.environ["COREBANK_USER"] = os.environ.get("COREBANK_USER") or "teller1"
+    os.environ["COREBANK_PASSWORD"] = os.environ.get("COREBANK_PASSWORD") or "testpass123"
     config = uvicorn.Config(app, host=HOST, port=PORT, log_level="warning")
     server = uvicorn.Server(config)
     threading.Thread(target=server.run, daemon=True).start()
