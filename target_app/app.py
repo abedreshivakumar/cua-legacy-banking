@@ -16,7 +16,15 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from target_app.data import create_session, find_member, get_session, invalidate_session
+from target_app.data import (
+    commit_transfer,
+    create_session,
+    find_member,
+    get_pending_transfer,
+    get_session,
+    invalidate_session,
+    stage_transfer,
+)
 from target_app.faults import FaultController, FaultSpec
 
 load_dotenv()  # so `make app`/`uvicorn target_app.app:app` picks up .env on its own
@@ -169,9 +177,60 @@ async def inquiry_result(request: Request, member_no: str = Form(...)) -> HTMLRe
     )
 
 
-# --- transfer (templates only in this story — not routed to logic yet) -----
-# See target_app/templates/xfer_*.html. Wired up in a later story alongside
-# the safety approval gate (S12).
+# --- transfer (the one irreversible write; gated by the safety policy at
+# the replay layer, not here — this route will happily commit anything it's
+# asked to, same as a real legacy teller app would) -------------------------
+
+
+@app.get("/fr/work/xfer", response_class=HTMLResponse)
+async def xfer_form(request: Request) -> HTMLResponse:
+    _, redirect = _require_session(request)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request, "xfer_form.html", {})
+
+
+@app.post("/fr/work/xfer/review", response_class=HTMLResponse)
+async def xfer_review(
+    request: Request,
+    from_share: str = Form(...),
+    to_share: str = Form(...),
+    amount: str = Form(...),
+    memo: str = Form(""),
+) -> HTMLResponse:
+    token, redirect = _require_session(request)
+    if redirect:
+        return redirect
+    stage_transfer(token, from_share=from_share, to_share=to_share, amount=amount, memo=memo)  # type: ignore[arg-type]
+    return templates.TemplateResponse(
+        request,
+        "xfer_review.html",
+        {"from_share": from_share, "to_share": to_share, "amount": amount},
+    )
+
+
+@app.post("/fr/work/xfer/confirm", response_class=HTMLResponse)
+async def xfer_confirm(request: Request) -> HTMLResponse:
+    token, redirect = _require_session(request)
+    if redirect:
+        return redirect
+    if get_pending_transfer(token) is None:  # type: ignore[arg-type]
+        return RedirectResponse("/fr/work/xfer", status_code=303)
+    return templates.TemplateResponse(request, "xfer_confirm.html", {})
+
+
+@app.post("/fr/work/xfer/receipt", response_class=HTMLResponse)
+async def xfer_receipt(request: Request) -> HTMLResponse:
+    token, redirect = _require_session(request)
+    if redirect:
+        return redirect
+    pending = get_pending_transfer(token)  # type: ignore[arg-type]
+    if pending is None:
+        return RedirectResponse("/fr/work/xfer", status_code=303)
+    confirmation_no = commit_transfer(token)  # type: ignore[arg-type]
+    return templates.TemplateResponse(
+        request, "xfer_receipt.html", {"confirmation_no": confirmation_no}
+    )
 
 
 # --- fault admin (outside the agent's allowlist) ----------------------------

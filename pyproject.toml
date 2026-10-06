@@ -27,6 +27,9 @@ dev = [
     "ruff>=0.7",
     "mypy>=1.13",
     "types-PyYAML>=6.0",
+    # test-only: decoding a screenshot PNG to assert on actual pixel
+    # values for the masked-region test (S13) — never imported by src/.
+    "pillow>=10.0",
 ]
 
 [tool.ruff]

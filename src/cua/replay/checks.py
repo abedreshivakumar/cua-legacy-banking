@@ -40,6 +40,15 @@ async def _page_text(page: Page, scope: list[ScopeStep], *, visible_only: bool) 
     return "\n".join(chunks)
 
 
+async def visible_page_text(page: Page) -> str:
+    """Every live frame's visible text concatenated — the same reading an
+    unscoped TextPresent condition uses. Exposed for detector synthesis
+    (discovery/outcome_probe.py), which diffs two pages' visible text
+    outside the Condition language, so it has to read it the identical
+    way replay will."""
+    return await _page_text(page, [], visible_only=True)
+
+
 async def evaluate(
     page: Page,
     condition: Condition,

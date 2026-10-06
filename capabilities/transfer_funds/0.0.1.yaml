@@ -1,0 +1,296 @@
+schema_version: 1
+id: transfer_funds
+version: "0.0.1"
+status: draft
+summary: >
+  Transfer funds between a member's own shares inside CoreBank. The one
+  irreversible write this app exposes — gated at replay time by the
+  safety policy's commit-approval requirement, not by anything in this
+  artifact itself.
+app:
+  vendor: mockbank
+  product: corebank_mock
+  version_range: ">=0.1,<1"
+  surface: web
+side_effects: irreversible_write
+labels: {}
+allowed_literals: []
+
+inputs:
+  - name: amount
+    type: string
+    pattern: "^[0-9]+\\.[0-9]{2}$"
+    sensitivity: internal
+    description: "Transfer amount, e.g. 50.00"
+
+outputs:
+  - name: confirmation_no
+    type: string
+    sensitivity: internal
+    required: true
+    extract:
+      read: value
+      transforms: [strip]
+      target:
+        scope:
+          - kind: frame
+            name: work
+        expect:
+          kind: generic
+        strategies:
+          - by: attr
+            attr: name
+            value: confirmation_no
+
+entry:
+  route: /main
+  login_script_ref: scripts/corebank_login
+  condition:
+    type: element_resolvable
+    target:
+      scope:
+        - kind: frame
+          name: nav
+      expect:
+        kind: link
+      strategies:
+        - by: text
+          text: "Transfer Funds"
+          match: exact
+
+steps:
+  - id: click_transfer_nav
+    intent: "Navigate to the transfer form via the nav frame"
+    action: click
+    risk: navigate
+    idempotent: true
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: nav
+      expect:
+        kind: link
+      strategies:
+        - by: text
+          text: "Transfer Funds"
+          match: exact
+    post:
+      timeout_ms: 3000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: select
+          strategies:
+            - by: attr
+              attr: name
+              value: from_share
+
+  - id: select_from_share
+    intent: "Choose the source share to transfer from"
+    action: select
+    value: "001 - Regular Savings"
+    risk: input
+    idempotent: true
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: select
+      strategies:
+        - by: attr
+          attr: name
+          value: from_share
+    post:
+      timeout_ms: 2000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: select
+          strategies:
+            - by: attr
+              attr: name
+              value: to_share
+
+  - id: select_to_share
+    intent: "Choose the destination share to transfer to"
+    action: select
+    value: "002 - Checking"
+    risk: input
+    idempotent: true
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: select
+      strategies:
+        - by: attr
+          attr: name
+          value: to_share
+    post:
+      timeout_ms: 2000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: textbox
+            editable: true
+          strategies:
+            - by: attr
+              attr: name
+              value: amount
+
+  - id: enter_amount
+    intent: "Type the transfer amount"
+    action: type
+    value: "{{ inputs.amount }}"
+    risk: input
+    idempotent: true
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: textbox
+        editable: true
+      strategies:
+        - by: attr
+          attr: name
+          value: amount
+    post:
+      timeout_ms: 2000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: button
+          strategies:
+            - by: attr
+              attr: value
+              value: Review
+
+  - id: click_review
+    intent: "Submit the transfer form to see the review page"
+    action: click
+    risk: query
+    idempotent: false
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: button
+      strategies:
+        - by: attr
+          attr: value
+          value: Review
+    post:
+      timeout_ms: 5000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: button
+          strategies:
+            - by: attr
+              attr: value
+              value: Continue
+
+  - id: click_continue
+    intent: "Continue past the review page to the irreversibility warning"
+    action: click
+    risk: query
+    idempotent: false
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: button
+      strategies:
+        - by: attr
+          attr: value
+          value: Continue
+    post:
+      timeout_ms: 5000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: button
+          strategies:
+            - by: attr
+              attr: value
+              value: Confirm
+
+  - id: click_confirm
+    intent: "Confirm the transfer — the irreversible commit"
+    action: click
+    risk: commit_irreversible
+    idempotent: false
+    target:
+      resolved_from: human
+      scope:
+        - kind: frame
+          name: work
+      expect:
+        kind: button
+      strategies:
+        - by: attr
+          attr: value
+          value: Confirm
+    post:
+      timeout_ms: 5000
+      when:
+        type: element_resolvable
+        target:
+          scope:
+            - kind: frame
+              name: work
+          expect:
+            kind: generic
+          strategies:
+            - by: attr
+              attr: name
+              value: confirmation_no
+
+detectors: []
+
+checkpoint:
+  when:
+    type: outputs_present
+    names: [confirmation_no]
+
+provenance:
+  discovery_run_id: handwritten
+  model: "n/a"
+  recorded_at: "2026-10-05T00:00:00Z"
+  transcript_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  compiler_version: "0.0.1"

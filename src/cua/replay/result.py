@@ -22,6 +22,11 @@ class StepTrace(BaseModel):
     step_id: str
     strategy_used: str | None
     duration_ms: int
+    # True when resolution fell through to a strategy other than the
+    # target's first-ranked one — a soft signal that the surface has
+    # drifted from what discovery originally saw, even though the step
+    # still succeeded. Never set for a step with only one strategy.
+    drifted: bool = False
 
 
 class RunResultBase(BaseModel):

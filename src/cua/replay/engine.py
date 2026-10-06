@@ -25,8 +25,10 @@ from cua.replay.recovery import (
     race_post_and_detectors,
     run_handler,
 )
-from cua.replay.result import Failed, RunResult, StepTrace, Succeeded
+from cua.replay.result import BlockedPendingApproval, Failed, RunResult, StepTrace, Succeeded
 from cua.replay.steps import apply_transforms, run_action, wait_for
+from cua.safety.approval import ApprovalStore, approval_key
+from cua.safety.policy import PolicyConfig, PolicyState, PolicyViolation, install_policy_guard
 from cua.surface.resolve import resolve
 
 MAX_RESTARTS = 2
@@ -63,6 +65,21 @@ async def _extract_outputs(
     return outputs, None
 
 
+def _result_for_violation(violation: PolicyViolation, base: Any, step_id: str) -> RunResult:
+    if violation.kind == "commit_pending_approval":
+        return BlockedPendingApproval(
+            **base(), reason=f"commit to {violation.url} needs approval", step_id=step_id
+        )
+    return Failed(
+        **base(
+            code="policy_denied",
+            step_id=step_id,
+            expected="policy-compliant request",
+            observed=f"{violation.kind}: {violation.url}",
+        )
+    )
+
+
 async def replay(
     page: Page,
     capability: Capability,
@@ -71,6 +88,8 @@ async def replay(
     base_url: str = "",
     entry_timeout_ms: int = 10000,
     login_fn: LoginFn | None = None,
+    policy: PolicyConfig | None = None,
+    approval_store: ApprovalStore | None = None,
 ) -> RunResult:
     run_id = str(uuid.uuid4())
     labels = capability.labels
@@ -79,17 +98,36 @@ async def replay(
     state = RecoveryState()
     restarts_used = 0
     has_commit_irreversible = any(s.risk == "commit_irreversible" for s in capability.steps)
+    policy_state = PolicyState()
+    effective_sha = content_sha256(capability)
 
     def base(**extra: Any) -> dict:
         return {
             "run_id": run_id,
             "capability": capability.id,
             "version": capability.version,
-            "effective_sha256": content_sha256(capability),
+            "effective_sha256": effective_sha,
             "trace": trace,
             "recoveries": state.recoveries,
+            "side_effects_committed": "yes" if policy_state.committed_urls else "none",
             **extra,
         }
+
+    if policy is not None:
+
+        def decide_commit() -> Any:
+            if approval_store is None:
+                return "pending"
+            key = approval_key(capability.id, capability.version, effective_sha, inputs)
+            return approval_store.decide(key)
+
+        await install_policy_guard(
+            page,
+            policy,
+            policy_state,
+            side_effects=capability.side_effects,
+            decide_commit=decide_commit,
+        )
 
     async def goto_entry() -> RunResult | None:
         await page.goto(base_url.rstrip("/") + capability.entry.route)
@@ -155,11 +193,34 @@ async def replay(
                 if act_error is not None:
                     return "advance", Failed(**base(**act_error, step_id=step.id))
 
+                if policy is not None:
+                    # The page.route handler that records a violation runs
+                    # asynchronously — click() resolving (and even the
+                    # settle frame's wait_for_load_state, which doesn't
+                    # block on an ABORTED request) doesn't guarantee the
+                    # route callback has run yet. Checking immediately
+                    # raced it in practice (confirmed directly: a blocked
+                    # commit fell through to postcondition_timeout instead
+                    # of policy_denied). A short bounded wait here is the
+                    # same fix shape as every other Playwright navigation
+                    # race in this codebase — see docs/DECISIONS.md.
+                    await page.wait_for_timeout(200)
+
+                violation = policy_state.latest()
+                if violation is not None:
+                    return "advance", _result_for_violation(violation, base, step.id)
+
+                drifted = (
+                    step.target is not None
+                    and strategy_used is not None
+                    and strategy_used != step.target.strategies[0].by
+                )
                 trace.append(
                     StepTrace(
                         step_id=step.id,
                         strategy_used=strategy_used,
                         duration_ms=int((time.monotonic() - start) * 1000),
+                        drifted=drifted,
                     )
                 )
                 should_act = False

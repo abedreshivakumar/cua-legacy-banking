@@ -75,3 +75,40 @@ def get_session(token: str | None) -> Session | None:
 
 def invalidate_session(token: str) -> None:
     SESSIONS.pop(token, None)
+
+
+# --- transfers ------------------------------------------------------------
+# In-memory, session-scoped staging for the one irreversible write this app
+# exposes: a funds transfer. stage -> confirm -> commit mirrors the real
+# three-page flow (review, warning, receipt) so there's a genuine POST to
+# gate behind an approval, not a synthetic stand-in.
+
+
+@dataclass
+class PendingTransfer:
+    from_share: str
+    to_share: str
+    amount: str
+    memo: str
+
+
+PENDING_TRANSFERS: dict[str, PendingTransfer] = {}
+
+
+def stage_transfer(token: str, *, from_share: str, to_share: str, amount: str, memo: str) -> None:
+    PENDING_TRANSFERS[token] = PendingTransfer(
+        from_share=from_share, to_share=to_share, amount=amount, memo=memo
+    )
+
+
+def get_pending_transfer(token: str) -> PendingTransfer | None:
+    return PENDING_TRANSFERS.get(token)
+
+
+def commit_transfer(token: str) -> str:
+    """The actual irreversible side effect: clears the staged transfer and
+    returns a confirmation number. Idempotent-unsafe by design — calling
+    this twice for the same token is exactly the double-spend this app's
+    policy gate exists to prevent at the replay layer, not here."""
+    PENDING_TRANSFERS.pop(token, None)
+    return "CNF" + secrets.token_hex(4).upper()

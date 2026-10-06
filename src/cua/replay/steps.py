@@ -100,7 +100,23 @@ async def run_action(
         return res.strategy_used, None
 
     if step.action == "navigate":
-        await page.goto(render(step.value or "", inputs, labels))
+        url = render(step.value or "", inputs, labels)
+        # Blocked here, not by the page.route network guard in
+        # safety/policy.py: a javascript: URI never produces a network
+        # request (confirmed directly — page.route never fires for one),
+        # so the only place to catch it is before the goto. This is
+        # narrower than refusing every javascript: href encountered while
+        # clicking through the app, which would also catch the mock app's
+        # own legitimate `href="javascript:document.forms[...].submit()"`
+        # link-triggered-submit pattern — that one's actual side effect is
+        # the resulting form POST, which the network guard does see.
+        if url.strip().lower().startswith("javascript:"):
+            return None, {
+                "code": "policy_denied",
+                "expected": "no javascript: scheme navigation",
+                "observed": f"navigate target={url!r}",
+            }
+        await page.goto(url)
         return None, None
     if step.action == "press":
         await page.keyboard.press(render(step.value or "", inputs, labels))

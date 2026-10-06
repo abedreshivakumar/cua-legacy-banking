@@ -43,6 +43,11 @@ outputs:
           - by: table_cell
             row_anchor: "$labels.savings_row"
             column_header: "$labels.balance_col"
+          # Label-independent fallback for the same reason as D24: the
+          # balance table is the only bordered one on this page, with
+          # exactly one data row, regardless of what its header text says.
+          - by: structural
+            path: "table[border='1'] tr:nth-child(2) td:nth-child(2)"
 
 outcomes:
   - name: member_not_found
@@ -98,6 +103,8 @@ steps:
             - by: text
               text: "$labels.search_btn"
               match: contains
+            - by: structural
+              path: "a"
 
   - id: submit_search
     intent: "Click Search to submit the member lookup"
@@ -116,16 +123,29 @@ steps:
         - by: text
           text: "$labels.search_btn"
           match: contains
+        # A tenant that relabels this control's text (see
+        # target_app/data.py LABELS_RELABELED) breaks the text strategy
+        # above outright — it's matched against THIS capability's own
+        # labels dict, not whatever the server is currently showing. This
+        # fallback doesn't depend on label text at all: it's the only <a>
+        # tag in the work frame either way. Added by hand for S11's
+        # relabel-drift demonstration — see docs/DECISIONS.md D24.
+        - by: structural
+          path: "a"
     post:
       timeout_ms: 10000
       when:
         type: any
         conditions:
+          # Label-independent on purpose (unlike the strategy fix above,
+          # there's no analogous "structural fallback" for free text): the
+          # member number the results page echoes back is never relabeled,
+          # only the surrounding row/column labels are (see D24).
           - type: text_present
             scope:
               - kind: frame
                 name: work
-            text: "$labels.savings_row"
+            pattern: "{{ inputs.member_no }}"
           - type: text_present
             scope:
               - kind: frame
@@ -150,11 +170,6 @@ checkpoint:
   when:
     type: all
     conditions:
-      - type: text_present
-        scope:
-          - kind: frame
-            name: work
-        text: "$labels.savings_row"
       - type: text_present
         scope:
           - kind: frame
